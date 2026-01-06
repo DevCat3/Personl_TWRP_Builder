@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       TWRP_VERSION:
-        description: 'Select TWRP Version & Android Version (e.g., 3.7.0_twrp-11.0)'
+        description: 'Select TWRP Version & Manifest Branch (e.g., 3.7.0_twrp-11.0)'
         required: true
         type: choice
         default: '3.7.0_twrp-11.0'
@@ -81,12 +81,22 @@ jobs:
         echo "📦 Samsung TAR: ${{ github.event.inputs.RECOVERY_TAR }}"
         echo "::endgroup::"
 
-    - name: Parse TWRP & Manifest Versions
+    - name: Parse TWRP Version & Map to Correct Manifest Branch
       run: |
         TWRP_VERSION="${{ github.event.inputs.TWRP_VERSION }}"
-        IFS='_' read -r TWRP_VER MANIFEST_BRANCH <<< "$TWRP_VERSION"
-        echo "✅ Parsed TWRP Version: $TWRP_VER"
-        echo "✅ Parsed Manifest Branch: $MANIFEST_BRANCH"
+        IFS='_' read -r TWRP_VER USER_BRANCH <<< "$TWRP_VERSION"
+        
+        # Map user-friendly branch names to actual manifest branch names
+        case "$USER_BRANCH" in
+          "twrp-12.1") MANIFEST_BRANCH="twrp-12.1" ;;
+          "twrp-11.0") MANIFEST_BRANCH="twrp-11" ;;
+          "twrp-10.0") MANIFEST_BRANCH="twrp-10" ;;
+          "twrp-9.0") MANIFEST_BRANCH="twrp-9" ;;
+          *) MANIFEST_BRANCH="$USER_BRANCH" ;;
+        esac
+        
+        echo "✅ TWRP Version: $TWRP_VER"
+        echo "✅ Using Manifest Branch: $MANIFEST_BRANCH"
         echo "TWRP_VER=$TWRP_VER" >> $GITHUB_ENV
         echo "MANIFEST_BRANCH=$MANIFEST_BRANCH" >> $GITHUB_ENV
 
@@ -153,7 +163,7 @@ jobs:
             exit 1
         fi
 
-    - name: Install Python 2 (for Android 9-10)
+    - name: Install Python 2 (for twrp-9 and twrp-10)
       if: contains(env.MANIFEST_BRANCH, 'twrp-9') || contains(env.MANIFEST_BRANCH, 'twrp-10')
       run: |
         sudo apt -y install python2
@@ -226,7 +236,7 @@ jobs:
         body: |
           ## Build Information
           - 📱 **TWRP Version:** ${{ env.TWRP_VER }}
-          - 🅰️ **Android Version:** ${{ env.MANIFEST_BRANCH }}
+          - 🅰️ **Manifest Branch:** ${{ env.MANIFEST_BRANCH }}
           - 🎯 **Target:** ${{ github.event.inputs.BUILD_TARGET}}.img
           - 🌳 **Device Tree:** [${{ github.event.inputs.DEVICE_TREE_BRANCH }}](${{ env.DEVICE_TREE_URL }}/tree/${{ github.event.inputs.DEVICE_TREE_BRANCH }})
           - 🔖 **Commit:** [Latest commit](${{ env.DEVICE_TREE_URL }}/commit/${{ env.COMMIT_ID }}) during build
