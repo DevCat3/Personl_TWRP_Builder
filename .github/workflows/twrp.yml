@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       TWRP_VERSION:
-        description: 'Select TWRP Version'
+        description: 'Select TWRP Version & Android Version (e.g., 3.7.0_android-11.0)'
         required: true
         type: choice
         default: '3.7.0_android-11.0'
@@ -19,7 +19,7 @@ on:
           - 3.4.0_android-9.0
           - 3.3.1_android-9.0
       DEVICE_TREE:
-        description: 'Device Tree URL'
+        description: 'Device Tree URL (e.g., https://github.com/username/android_device_brand_codename)'
         required: true
         default: 'https://github.com/DevCat3/android_device_samsung_gta4lve'
       DEVICE_TREE_BRANCH:
@@ -27,7 +27,7 @@ on:
         required: true
         default: 'android-11.0'
       DEVICE_PATH:
-        description: 'Device Path'
+        description: 'Device Path (e.g., device/samsung/gta4lve)'
         required: true
         default: 'device/samsung/gta4lve'
       DEVICE_NAME:
@@ -60,6 +60,9 @@ jobs:
     if: github.event.repository.owner.id == github.event.sender.id
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # ============================================
+      # PERSONAL INFORMATION (Update if needed)
+      # ============================================
       USER_NAME: "DevCat3"
       USER_EMAIL: "omarelbakery2008@gmail.com"
       USER_GITHUB_USERNAME: "DevCat3"
@@ -254,4 +257,3 @@ jobs:
           echo "⚠️ tools directory not found, skipping check"
         fi
       continue-on-error: true
-      
