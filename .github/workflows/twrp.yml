@@ -27,7 +27,7 @@ on:
         required: true
         default: 'android-11.0'
       DEVICE_PATH:
-        description: 'Device Path (e.g., device/samsung/gta4lve)'
+        description: 'Device Path'
         required: true
         default: 'device/samsung/gta4lve'
       DEVICE_NAME:
