@@ -4,20 +4,20 @@ on:
   workflow_dispatch:
     inputs:
       TWRP_VERSION:
-        description: 'Select TWRP Version & Android Version (e.g., 3.7.0_android-11.0)'
+        description: 'Select TWRP Version & Android Version (e.g., 3.7.0_twrp-11.0)'
         required: true
         type: choice
-        default: '3.7.0_android-11.0'
+        default: '3.7.0_twrp-11.0'
         options:
-          - 3.7.1_android-12.1
-          - 3.7.0_android-11.0
-          - 3.6.2_android-11.0
-          - 3.6.1_android-10.0
-          - 3.5.2_android-10.0
-          - 3.5.1_android-9.0
-          - 3.5.0_android-9.0
-          - 3.4.0_android-9.0
-          - 3.3.1_android-9.0
+          - 3.7.1_twrp-12.1
+          - 3.7.0_twrp-11.0
+          - 3.6.2_twrp-11.0
+          - 3.6.1_twrp-10.0
+          - 3.5.2_twrp-10.0
+          - 3.5.1_twrp-9.0
+          - 3.5.0_twrp-9.0
+          - 3.4.0_twrp-9.0
+          - 3.3.1_twrp-9.0
       DEVICE_TREE:
         description: 'Device Tree URL (e.g., https://github.com/username/android_device_brand_codename)'
         required: true
@@ -60,9 +60,6 @@ jobs:
     if: github.event.repository.owner.id == github.event.sender.id
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # ============================================
-      # PERSONAL INFORMATION (Update if needed)
-      # ============================================
       USER_NAME: "DevCat3"
       USER_EMAIL: "omarelbakery2008@gmail.com"
       USER_GITHUB_USERNAME: "DevCat3"
@@ -84,14 +81,14 @@ jobs:
         echo "📦 Samsung TAR: ${{ github.event.inputs.RECOVERY_TAR }}"
         echo "::endgroup::"
 
-    - name: Parse TWRP & Android Versions
+    - name: Parse TWRP & Manifest Versions
       run: |
         TWRP_VERSION="${{ github.event.inputs.TWRP_VERSION }}"
-        IFS='_' read -r TWRP_VER ANDROID_VER <<< "$TWRP_VERSION"
+        IFS='_' read -r TWRP_VER MANIFEST_BRANCH <<< "$TWRP_VERSION"
         echo "✅ Parsed TWRP Version: $TWRP_VER"
-        echo "✅ Parsed Android Version: $ANDROID_VER"
+        echo "✅ Parsed Manifest Branch: $MANIFEST_BRANCH"
         echo "TWRP_VER=$TWRP_VER" >> $GITHUB_ENV
-        echo "ANDROID_VER=$ANDROID_VER" >> $GITHUB_ENV
+        echo "MANIFEST_BRANCH=$MANIFEST_BRANCH" >> $GITHUB_ENV
 
     - name: Cleanup Workspace
       uses: rokibhasansagar/slimhub_actions@main
@@ -128,7 +125,7 @@ jobs:
         cd workspace
         git config --global user.name "${{ env.USER_NAME }}"
         git config --global user.email "${{ env.USER_EMAIL }}"
-        repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b ${{ env.ANDROID_VER }}
+        repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b ${{ env.MANIFEST_BRANCH }}
 
     - name: Sync Repository
       run: |
@@ -156,12 +153,12 @@ jobs:
             exit 1
         fi
 
-    - name: Install Python 2 (for older Android versions)
-      if: contains(env.ANDROID_VER, 'android-9') || contains(env.ANDROID_VER, 'android-10')
+    - name: Install Python 2 (for Android 9-10)
+      if: contains(env.MANIFEST_BRANCH, 'twrp-9') || contains(env.MANIFEST_BRANCH, 'twrp-10')
       run: |
         sudo apt -y install python2
         sudo ln -sf /usr/bin/python2 /usr/bin/python
-        echo "✅ Python 2 installed for ${{ env.ANDROID_VER }}"
+        echo "✅ Python 2 installed for ${{ env.MANIFEST_BRANCH }}"
 
     - name: Build Recovery Image
       run: |
@@ -229,7 +226,7 @@ jobs:
         body: |
           ## Build Information
           - 📱 **TWRP Version:** ${{ env.TWRP_VER }}
-          - 🅰️ **Android Version:** ${{ env.ANDROID_VER }}
+          - 🅰️ **Android Version:** ${{ env.MANIFEST_BRANCH }}
           - 🎯 **Target:** ${{ github.event.inputs.BUILD_TARGET}}.img
           - 🌳 **Device Tree:** [${{ github.event.inputs.DEVICE_TREE_BRANCH }}](${{ env.DEVICE_TREE_URL }}/tree/${{ github.event.inputs.DEVICE_TREE_BRANCH }})
           - 🔖 **Commit:** [Latest commit](${{ env.DEVICE_TREE_URL }}/commit/${{ env.COMMIT_ID }}) during build
