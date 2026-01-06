@@ -1,0 +1,257 @@
+name: TWRP Recovery Builder - Personalized
+
+on:
+  workflow_dispatch:
+    inputs:
+      TWRP_VERSION:
+        description: 'Select TWRP Version & Android Version (e.g., 3.7.0_android-11.0)'
+        required: true
+        type: choice
+        default: '3.7.0_android-11.0'
+        options:
+          - 3.7.1_android-12.1
+          - 3.7.0_android-11.0
+          - 3.6.2_android-11.0
+          - 3.6.1_android-10.0
+          - 3.5.2_android-10.0
+          - 3.5.1_android-9.0
+          - 3.5.0_android-9.0
+          - 3.4.0_android-9.0
+          - 3.3.1_android-9.0
+      DEVICE_TREE:
+        description: 'Device Tree URL (e.g., https://github.com/username/android_device_brand_codename)'
+        required: true
+        default: 'https://github.com/DevCat3/android_device_samsung_gta4lve'
+      DEVICE_TREE_BRANCH:
+        description: 'Device Tree Branch'
+        required: true
+        default: 'android-11.0'
+      DEVICE_PATH:
+        description: 'Device Path (e.g., device/samsung/gta4lve)'
+        required: true
+        default: 'device/samsung/gta4lve'
+      DEVICE_NAME:
+        description: 'Device Codename'
+        required: true
+        default: 'gta4lve'
+      BUILD_TARGET:
+        description: 'Build Target Type'
+        required: true
+        default: 'recovery'
+        type: choice
+        options:
+          - boot
+          - recovery
+          - vendorboot
+      LDCHECK:
+        description: 'Path for blob dependency check'
+        required: true
+        default: 'system/bin/qseecomd'
+      RECOVERY_TAR:
+        description: 'Create recovery.tar for Samsung devices'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build:
+    name: Build TWRP by ${{ github.actor }}
+    runs-on: ubuntu-22.04
+    if: github.event.repository.owner.id == github.event.sender.id
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      USER_NAME: "DevCat3"
+      USER_EMAIL: "omarelbakery2008@gmail.com"
+      USER_GITHUB_USERNAME: "DevCat3"
+    permissions:
+      contents: write
+    steps:
+    - name: Check Out Repository
+      uses: actions/checkout@v3
+
+    - name: Display User Inputs
+      run: |
+        echo "::group::User Environment Variables"
+        echo "📱 TWRP Version: ${{ github.event.inputs.TWRP_VERSION }}"
+        echo "🌳 Device Tree: ${{ github.event.inputs.DEVICE_TREE }}"
+        echo "📂 Device Tree Branch: ${{ github.event.inputs.DEVICE_TREE_BRANCH }}"
+        echo "📍 Device Path: ${{ github.event.inputs.DEVICE_PATH }}"
+        echo "🔤 Device Name: ${{ github.event.inputs.DEVICE_NAME }}"
+        echo "🎯 Build Target: ${{ github.event.inputs.BUILD_TARGET }}image"
+        echo "📦 Samsung TAR: ${{ github.event.inputs.RECOVERY_TAR }}"
+        echo "::endgroup::"
+
+    - name: Parse TWRP & Android Versions
+      run: |
+        TWRP_VERSION="${{ github.event.inputs.TWRP_VERSION }}"
+        IFS='_' read -r TWRP_VER ANDROID_VER <<< "$TWRP_VERSION"
+        echo "✅ Parsed TWRP Version: $TWRP_VER"
+        echo "✅ Parsed Android Version: $ANDROID_VER"
+        echo "TWRP_VER=$TWRP_VER" >> $GITHUB_ENV
+        echo "ANDROID_VER=$ANDROID_VER" >> $GITHUB_ENV
+
+    - name: Cleanup Workspace
+      uses: rokibhasansagar/slimhub_actions@main
+
+    - name: Set Swap Space
+      uses: pierotofy/set-swap-space@master
+      with:
+        swap-size-gb: 24
+
+    - name: Prepare Build Environment
+      run: |
+        sudo apt update
+        sudo apt -y upgrade
+        sudo apt -y install gperf gcc-multilib gcc-10-multilib g++-multilib g++-10-multilib lib32ncurses5-dev x11proto-core-dev lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc bc ccache lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libwxgtk3.0-gtk3-dev lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev libtinfo5 libgflags-dev
+        sudo add-apt-repository universe -y
+        sudo apt -y install libncurses5
+
+    - name: Install OpenJDK 8
+      uses: actions/setup-java@v4
+      with:
+        distribution: zulu
+        java-version: 8
+
+    - name: Install Git-Repo Tool
+      run: |
+        mkdir -p ~/bin
+        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+        chmod a+x ~/bin/repo
+        sudo ln -sf ~/bin/repo /usr/bin/repo
+
+    - name: Initialize Repo with TWRP Manifest
+      run: |
+        mkdir -p workspace
+        cd workspace
+        git config --global user.name "${{ env.USER_NAME }}"
+        git config --global user.email "${{ env.USER_EMAIL }}"
+        repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b ${{ env.ANDROID_VER }}
+
+    - name: Sync Repository
+      run: |
+        cd workspace
+        repo sync -j$(nproc --all) --force-sync
+
+    - name: Clone Device Tree
+      run: |
+        cd workspace
+        git clone ${{ github.event.inputs.DEVICE_TREE }} -b ${{ github.event.inputs.DEVICE_TREE_BRANCH }} ./${{ github.event.inputs.DEVICE_PATH }}
+        cd ${{ github.event.inputs.DEVICE_PATH }}
+        echo "COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_ENV
+
+    - name: Check Build Makefile
+      run: |
+        cd workspace
+        if [ -f ${{ github.event.inputs.DEVICE_PATH }}/twrp_${{ github.event.inputs.DEVICE_NAME}}.mk ]; then
+            echo "✅ Found twrp_${{ github.event.inputs.DEVICE_NAME }}.mk"
+            echo "DEVICE_MAKEFILE=twrp_${{ github.event.inputs.DEVICE_NAME }}" >> $GITHUB_ENV
+        elif [ -f ${{ github.event.inputs.DEVICE_PATH }}/omni_${{ github.event.inputs.DEVICE_NAME}}.mk ]; then
+            echo "✅ Found omni_${{ github.event.inputs.DEVICE_NAME }}.mk"
+            echo "DEVICE_MAKEFILE=omni_${{ github.event.inputs.DEVICE_NAME }}" >> $GITHUB_ENV
+        else
+            echo "❌ No recovery makefile found!"
+            exit 1
+        fi
+
+    - name: Install Python 2 (for older Android versions)
+      if: contains(env.ANDROID_VER, 'android-9') || contains(env.ANDROID_VER, 'android-10')
+      run: |
+        sudo apt -y install python2
+        sudo ln -sf /usr/bin/python2 /usr/bin/python
+        echo "✅ Python 2 installed for ${{ env.ANDROID_VER }}"
+
+    - name: Build Recovery Image
+      run: |
+        cd workspace
+        source build/envsetup.sh
+        export ALLOW_MISSING_DEPENDENCIES=true
+        lunch ${{ env.DEVICE_MAKEFILE }}-eng
+        make clean
+        make ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
+        echo "✅ Successfully built ${{ github.event.inputs.BUILD_TARGET }}.img!"
+
+    - name: Set Build Date & Device Tree URL
+      run: |
+        echo "BUILD_DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
+        DEVICE_TREE_URL="${{ github.event.inputs.DEVICE_TREE }}"
+        if [[ "${DEVICE_TREE_URL}" == *.git ]]; then
+          DEVICE_TREE_URL="${DEVICE_TREE_URL%.git}"
+        fi
+        echo "DEVICE_TREE_URL=${DEVICE_TREE_URL}" >> $GITHUB_ENV
+
+    - name: Check Generated Recovery Image
+      run: |
+        cd workspace
+        if [ -f out/target/product/${{ github.event.inputs.DEVICE_NAME }}/recovery.img ]; then
+            echo "✅ recovery.img found"
+            echo "RECOVERY_TYPE=recovery" >> $GITHUB_ENV
+        elif [ -f out/target/product/${{ github.event.inputs.DEVICE_NAME }}/boot.img ]; then
+            echo "✅ boot.img found"
+            echo "RECOVERY_TYPE=boot" >> $GITHUB_ENV
+        elif [ -f out/target/product/${{ github.event.inputs.DEVICE_NAME }}/vendor_boot.img ]; then
+            echo "✅ vendor_boot.img found"
+            echo "RECOVERY_TYPE=vendor_boot" >> $GITHUB_ENV
+        else
+            echo "❌ No recovery file found!"
+            exit 1
+        fi
+        
+        IMG_PATH="out/target/product/${{ github.event.inputs.DEVICE_NAME }}/${{ env.RECOVERY_TYPE }}.img"
+        if [ -f "$IMG_PATH" ]; then
+          echo "MD5_IMG=$(md5sum $IMG_PATH | cut -d ' ' -f 1)" >> $GITHUB_ENV
+        fi
+
+    - name: Create Recovery ZIP
+      run: |
+        cd workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/
+        zip -9 recovery.zip ${{ env.RECOVERY_TYPE }}.img
+        echo "✅ Created recovery.zip"
+
+    - name: Create Samsung TAR (Optional)
+      if: github.event.inputs.RECOVERY_TAR == 'true'
+      run: |
+        cd workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/
+        tar -cvf ${{ env.RECOVERY_TYPE }}.tar ${{ env.RECOVERY_TYPE }}.img
+        echo "✅ Created ${{ env.RECOVERY_TYPE }}.tar"
+      continue-on-error: true
+
+    - name: Upload to GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/${{ env.RECOVERY_TYPE }}.img
+          workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/recovery.zip
+        name: "TWRP ${{ env.TWRP_VER }} for ${{ github.event.inputs.DEVICE_NAME }} // ${{ env.BUILD_DATE }}"
+        tag_name: "twrp-${{ env.TWRP_VER }}-${{ github.event.inputs.DEVICE_NAME }}-${{ env.BUILD_DATE }}-${{ github.run_id }}"
+        body: |
+          ## Build Information
+          - 📱 **TWRP Version:** ${{ env.TWRP_VER }}
+          - 🅰️ **Android Version:** ${{ env.ANDROID_VER }}
+          - 🎯 **Target:** ${{ github.event.inputs.BUILD_TARGET}}.img
+          - 🌳 **Device Tree:** [${{ github.event.inputs.DEVICE_TREE_BRANCH }}](${{ env.DEVICE_TREE_URL }}/tree/${{ github.event.inputs.DEVICE_TREE_BRANCH }})
+          - 🔖 **Commit:** [Latest commit](${{ env.DEVICE_TREE_URL }}/commit/${{ env.COMMIT_ID }}) during build
+          - 🔢 **MD5:** `${{ env.MD5_IMG }}`
+          - 🏗️ **Built by:** @${{ github.actor }}
+          
+          ## Installation Instructions
+          - For Samsung devices: Use TAR file with Odin
+          - For other devices: Use IMG file with fastboot
+
+    - name: Check Missing Dependencies
+      run: |
+        if [ -d "tools" ]; then
+          cd tools
+          if [ -f libneeds ] && [ -f ldcheck ]; then
+            mv -n libneeds ${GITHUB_WORKSPACE}/workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/recovery/root/
+            mv -n ldcheck ${GITHUB_WORKSPACE}/workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/recovery/root/
+            cd ${GITHUB_WORKSPACE}/workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/recovery/root
+            python3 ldcheck -p system/lib64:vendor/lib64:system/lib:vendor/lib -d ${{ github.event.inputs.LDCHECK }}
+            echo "✅ Dependency check completed"
+          else
+            echo "⚠️ ldcheck tools not found, skipping check"
+          fi
+        else
+          echo "⚠️ tools directory not found, skipping check"
+        fi
+      continue-on-error: true
+      
