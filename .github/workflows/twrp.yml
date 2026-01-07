@@ -1,10 +1,10 @@
-name: TWRP Recovery Builder - Personalized
+name: TWRP Recovery Builder - Optimized
 
 on:
   workflow_dispatch:
     inputs:
       TWRP_VERSION:
-        description: 'Select TWRP Version'
+        description: 'Select TWRP Version & Manifest Branch (e.g., 3.7.0_twrp-11.0)'
         required: true
         type: choice
         default: '3.7.0_twrp-11.0'
@@ -63,6 +63,10 @@ jobs:
       USER_NAME: "DevCat3"
       USER_EMAIL: "omarelbakery2008@gmail.com"
       USER_GITHUB_USERNAME: "DevCat3"
+      # Cache settings
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_SIZE: 50G
+      CCACHE_EXEC: ccache
     permissions:
       contents: write
     steps:
@@ -81,12 +85,12 @@ jobs:
         echo "📦 Samsung TAR: ${{ github.event.inputs.RECOVERY_TAR }}"
         echo "::endgroup::"
 
-    - name: Parse TWRP Version & Map to Correct Manifest Branch
+    - name: Parse TWRP Version & Map to Manifest Branch
       run: |
         TWRP_VERSION="${{ github.event.inputs.TWRP_VERSION }}"
         IFS='_' read -r TWRP_VER USER_BRANCH <<< "$TWRP_VERSION"
         
-        # Map user-friendly branch names to actual manifest branch names
+        # Map user-friendly names to actual manifest branches
         case "$USER_BRANCH" in
           "twrp-12.1") MANIFEST_BRANCH="twrp-12.1" ;;
           "twrp-11.0") MANIFEST_BRANCH="twrp-11" ;;
@@ -95,10 +99,32 @@ jobs:
           *) MANIFEST_BRANCH="$USER_BRANCH" ;;
         esac
         
-        echo "✅ TWRP Version: $TWRP_VER"
-        echo "✅ Using Manifest Branch: $MANIFEST_BRANCH"
         echo "TWRP_VER=$TWRP_VER" >> $GITHUB_ENV
         echo "MANIFEST_BRANCH=$MANIFEST_BRANCH" >> $GITHUB_ENV
+
+    # Cache the repo data to speed up sync on re-runs
+    - name: Cache Repo Data
+      id: cache-repo
+      uses: actions/cache@v3
+      with:
+        path: |
+          ${{ github.workspace }}/workspace/.repo
+          ${{ github.workspace }}/workspace/prebuilts
+        key: ${{ runner.os }}-repo-${{ env.MANIFEST_BRANCH }}-${{ hashFiles('**/*.yml') }}
+        restore-keys: |
+          ${{ runner.os }}-repo-${{ env.MANIFEST_BRANCH }}-
+          ${{ runner.os }}-repo-
+
+    # Cache ccache to speed up compilation
+    - name: Cache CCache
+      id: cache-ccache
+      uses: actions/cache@v3
+      with:
+        path: ${{ github.workspace }}/.ccache
+        key: ${{ runner.os }}-ccache-${{ env.MANIFEST_BRANCH }}-${{ github.run_id }}
+        restore-keys: |
+          ${{ runner.os }}-ccache-${{ env.MANIFEST_BRANCH }}-
+          ${{ runner.os }}-ccache-
 
     - name: Cleanup Workspace
       uses: rokibhasansagar/slimhub_actions@main
@@ -107,6 +133,12 @@ jobs:
       uses: pierotofy/set-swap-space@master
       with:
         swap-size-gb: 24
+
+    - name: Configure CCache
+      run: |
+        ccache -M $CCACHE_SIZE
+        ccache -s
+        ccache -z
 
     - name: Prepare Build Environment
       run: |
@@ -133,20 +165,48 @@ jobs:
       run: |
         mkdir -p workspace
         cd workspace
-        git config --global user.name "${{ env.USER_NAME }}"
-        git config --global user.email "${{ env.USER_EMAIL }}"
-        repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b ${{ env.MANIFEST_BRANCH }}
+        
+        # Check if repo was already initialized (cached)
+        if [ -d ".repo" ]; then
+          echo "✅ Using cached repo data"
+          # Update the manifest branch if needed
+          repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b ${{ env.MANIFEST_BRANCH }}
+        else
+          echo "🔄 Initializing fresh repo"
+          git config --global user.name "${{ env.USER_NAME }}"
+          git config --global user.email "${{ env.USER_EMAIL }}"
+          repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b ${{ env.MANIFEST_BRANCH }}
+        fi
 
     - name: Sync Repository
       run: |
         cd workspace
-        repo sync -j$(nproc --all) --force-sync
+        # If we have cache, sync quickly without force
+        if [ "${{ steps.cache-repo.outputs.cache-hit }}" = "true" ]; then
+          echo "⚡ Fast sync (using cache)"
+          repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --optimized-fetch --prune
+        else
+          echo "⏳ Full sync (first run)"
+          repo sync -j$(nproc --all) --force-sync
+        fi
 
     - name: Clone Device Tree
       run: |
         cd workspace
-        git clone ${{ github.event.inputs.DEVICE_TREE }} -b ${{ github.event.inputs.DEVICE_TREE_BRANCH }} ./${{ github.event.inputs.DEVICE_PATH }}
-        cd ${{ github.event.inputs.DEVICE_PATH }}
+        
+        # Check if device tree already exists
+        if [ -d "${{ github.event.inputs.DEVICE_PATH }}" ]; then
+          echo "✅ Device tree exists, updating..."
+          cd ${{ github.event.inputs.DEVICE_PATH }}
+          git fetch origin
+          git checkout ${{ github.event.inputs.DEVICE_TREE_BRANCH }}
+          git pull origin ${{ github.event.inputs.DEVICE_TREE_BRANCH }}
+        else
+          echo "🔄 Cloning device tree..."
+          git clone ${{ github.event.inputs.DEVICE_TREE }} -b ${{ github.event.inputs.DEVICE_TREE_BRANCH }} ./${{ github.event.inputs.DEVICE_PATH }}
+          cd ${{ github.event.inputs.DEVICE_PATH }}
+        fi
+        
         echo "COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_ENV
 
     - name: Check Build Makefile
@@ -175,10 +235,26 @@ jobs:
         cd workspace
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
+        export CCACHE_EXEC=${{ env.CCACHE_EXEC }}
+        export USE_CCACHE=1
+        export CCACHE_DIR=${{ env.CCACHE_DIR }}
+        
         lunch ${{ env.DEVICE_MAKEFILE }}-eng
-        make clean
+        
+        # Check if we should clean (only if not cached)
+        if [ "${{ steps.cache-repo.outputs.cache-hit }}" != "true" ]; then
+          echo "🧹 Cleaning build (first run)"
+          make clean
+        else
+          echo "⚡ Skipping clean (using cache)"
+        fi
+        
         make ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
         echo "✅ Successfully built ${{ github.event.inputs.BUILD_TARGET }}.img!"
+
+    - name: Show CCache Stats
+      run: |
+        ccache -s
 
     - name: Set Build Date & Device Tree URL
       run: |
@@ -246,6 +322,10 @@ jobs:
           ## Installation Instructions
           - For Samsung devices: Use TAR file with Odin
           - For other devices: Use IMG file with fastboot
+          
+          ## Build Performance
+          $([ "${{ steps.cache-repo.outputs.cache-hit }}" = "true" ] && echo "✅ Used cached repository" || echo "🔄 Fresh repository sync")
+          $([ "${{ steps.cache-ccache.outputs.cache-hit }}" = "true" ] && echo "✅ Used ccache" || echo "🔄 Fresh compilation")
 
     - name: Check Missing Dependencies
       run: |
@@ -264,3 +344,8 @@ jobs:
           echo "⚠️ tools directory not found, skipping check"
         fi
       continue-on-error: true
+
+    - name: Cleanup Cache on Success
+      if: success()
+      run: |
+        echo "✅ Build successful! Cache will be updated automatically."
