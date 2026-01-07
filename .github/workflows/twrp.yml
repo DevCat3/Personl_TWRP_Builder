@@ -27,7 +27,7 @@ on:
         required: true
         default: 'android-11.0'
       DEVICE_PATH:
-        description: 'Device Path'
+        description: 'Device Path (e.g., device/samsung/gta4lve)'
         required: true
         default: 'device/samsung/gta4lve'
       DEVICE_NAME:
@@ -90,7 +90,6 @@ jobs:
         TWRP_VERSION="${{ github.event.inputs.TWRP_VERSION }}"
         IFS='_' read -r TWRP_VER USER_BRANCH <<< "$TWRP_VERSION"
         
-        # Map user-friendly names to actual manifest branches
         case "$USER_BRANCH" in
           "twrp-12.1") MANIFEST_BRANCH="twrp-12.1" ;;
           "twrp-11.0") MANIFEST_BRANCH="twrp-11" ;;
@@ -132,13 +131,7 @@ jobs:
     - name: Set Swap Space
       uses: pierotofy/set-swap-space@master
       with:
-        swap-size-gb: 24
-
-    - name: Configure CCache
-      run: |
-        ccache -M $CCACHE_SIZE
-        ccache -s
-        ccache -z
+        swap-space-gb: 24
 
     - name: Prepare Build Environment
       run: |
@@ -147,6 +140,24 @@ jobs:
         sudo apt -y install gperf gcc-multilib gcc-10-multilib g++-multilib g++-10-multilib lib32ncurses5-dev x11proto-core-dev lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc bc ccache lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libwxgtk3.0-gtk3-dev lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev libtinfo5 libgflags-dev
         sudo add-apt-repository universe -y
         sudo apt -y install libncurses5
+
+    - name: Configure CCache
+      run: |
+        # تأكد ان ccache مثبت
+        if ! command -v ccache &> /dev/null; then
+          echo "❌ ccache not found, installing..."
+          sudo apt update && sudo apt install -y ccache
+        fi
+        
+        ccache -M $CCACHE_SIZE
+        ccache -s
+        ccache -z
+
+    - name: Check CCache Stats
+      run: |
+        echo "CCache directory: $CCACHE_DIR"
+        echo "CCache size limit: $CCACHE_SIZE"
+        ccache -s
 
     - name: Install OpenJDK 8
       uses: actions/setup-java@v4
@@ -166,10 +177,8 @@ jobs:
         mkdir -p workspace
         cd workspace
         
-        # Check if repo was already initialized (cached)
         if [ -d ".repo" ]; then
           echo "✅ Using cached repo data"
-          # Update the manifest branch if needed
           repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b ${{ env.MANIFEST_BRANCH }}
         else
           echo "🔄 Initializing fresh repo"
@@ -181,7 +190,6 @@ jobs:
     - name: Sync Repository
       run: |
         cd workspace
-        # If we have cache, sync quickly without force
         if [ "${{ steps.cache-repo.outputs.cache-hit }}" = "true" ]; then
           echo "⚡ Fast sync (using cache)"
           repo sync -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --optimized-fetch --prune
@@ -194,7 +202,6 @@ jobs:
       run: |
         cd workspace
         
-        # Check if device tree already exists
         if [ -d "${{ github.event.inputs.DEVICE_PATH }}" ]; then
           echo "✅ Device tree exists, updating..."
           cd ${{ github.event.inputs.DEVICE_PATH }}
@@ -241,7 +248,6 @@ jobs:
         
         lunch ${{ env.DEVICE_MAKEFILE }}-eng
         
-        # Check if we should clean (only if not cached)
         if [ "${{ steps.cache-repo.outputs.cache-hit }}" != "true" ]; then
           echo "🧹 Cleaning build (first run)"
           make clean
@@ -326,6 +332,10 @@ jobs:
           ## Build Performance
           $([ "${{ steps.cache-repo.outputs.cache-hit }}" = "true" ] && echo "✅ Used cached repository" || echo "🔄 Fresh repository sync")
           $([ "${{ steps.cache-ccache.outputs.cache-hit }}" = "true" ] && echo "✅ Used ccache" || echo "🔄 Fresh compilation")
+          
+          ## Cache Stats
+          **CCache:**
+          $(ccache -s | grep -E "(cache hit|cache miss|files in cache|cache size)" | head -5)
 
     - name: Check Missing Dependencies
       run: |
