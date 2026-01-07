@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       TWRP_VERSION:
-        description: 'Select TWRP Version & Manifest Branch (e.g., 3.7.0_twrp-11.0)'
+        description: 'Select TWRP Version'
         required: true
         type: choice
         default: '3.7.0_twrp-11.0'
@@ -101,7 +101,6 @@ jobs:
         echo "TWRP_VER=$TWRP_VER" >> $GITHUB_ENV
         echo "MANIFEST_BRANCH=$MANIFEST_BRANCH" >> $GITHUB_ENV
 
-    # Cache the repo data to speed up sync on re-runs
     - name: Cache Repo Data
       id: cache-repo
       uses: actions/cache@v3
@@ -114,7 +113,6 @@ jobs:
           ${{ runner.os }}-repo-${{ env.MANIFEST_BRANCH }}-
           ${{ runner.os }}-repo-
 
-    # Cache ccache to speed up compilation
     - name: Cache CCache
       id: cache-ccache
       uses: actions/cache@v3
@@ -143,7 +141,7 @@ jobs:
 
     - name: Configure CCache
       run: |
-        # تأكد ان ccache مثبت
+        # تأكد ان ccache مثبت قبل الاستخدام
         if ! command -v ccache &> /dev/null; then
           echo "❌ ccache not found, installing..."
           sudo apt update && sudo apt install -y ccache
@@ -153,7 +151,7 @@ jobs:
         ccache -s
         ccache -z
 
-    - name: Check CCache Stats
+    - name: Show CCache Stats
       run: |
         echo "CCache directory: $CCACHE_DIR"
         echo "CCache size limit: $CCACHE_SIZE"
@@ -248,6 +246,7 @@ jobs:
         
         lunch ${{ env.DEVICE_MAKEFILE }}-eng
         
+        # Skip clean if using cache
         if [ "${{ steps.cache-repo.outputs.cache-hit }}" != "true" ]; then
           echo "🧹 Cleaning build (first run)"
           make clean
@@ -333,8 +332,7 @@ jobs:
           $([ "${{ steps.cache-repo.outputs.cache-hit }}" = "true" ] && echo "✅ Used cached repository" || echo "🔄 Fresh repository sync")
           $([ "${{ steps.cache-ccache.outputs.cache-hit }}" = "true" ] && echo "✅ Used ccache" || echo "🔄 Fresh compilation")
           
-          ## Cache Stats
-          **CCache:**
+          ## CCache Statistics
           $(ccache -s | grep -E "(cache hit|cache miss|files in cache|cache size)" | head -5)
 
     - name: Check Missing Dependencies
