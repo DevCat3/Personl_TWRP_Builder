@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       TWRP_VERSION:
-        description: 'Select TWRP Version & Manifest Branch (e.g., 3.7.0_twrp-11.0)'
+        description: 'Select TWRP Version'
         required: true
         type: choice
         default: '3.7.0_twrp-11.0'
@@ -19,7 +19,7 @@ on:
           - 3.4.0_twrp-9.0
           - 3.3.1_twrp-9.0
       DEVICE_TREE:
-        description: 'Device Tree URL (e.g., https://github.com/username/android_device_brand_codename)'
+        description: 'Device Tree URL'
         required: true
         default: 'https://github.com/DevCat3/android_device_samsung_gta4lve'
       DEVICE_TREE_BRANCH:
@@ -27,7 +27,7 @@ on:
         required: true
         default: 'android-11.0'
       DEVICE_PATH:
-        description: 'Device Path (e.g., device/samsung/gta4lve)'
+        description: 'Device Path'
         required: true
         default: 'device/samsung/gta4lve'
       DEVICE_NAME:
