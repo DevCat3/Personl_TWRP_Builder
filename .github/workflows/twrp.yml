@@ -63,10 +63,6 @@ jobs:
       USER_NAME: "DevCat3"
       USER_EMAIL: "omarelbakery2008@gmail.com"
       USER_GITHUB_USERNAME: "DevCat3"
-      # Cache settings
-      CCACHE_DIR: ${{ github.workspace }}/.ccache
-      CCACHE_SIZE: 50G
-      CCACHE_EXEC: ccache
     permissions:
       contents: write
     steps:
@@ -101,6 +97,7 @@ jobs:
         echo "TWRP_VER=$TWRP_VER" >> $GITHUB_ENV
         echo "MANIFEST_BRANCH=$MANIFEST_BRANCH" >> $GITHUB_ENV
 
+    # CACHE: Repo data only (no ccache for Android 12.1+)
     - name: Cache Repo Data
       id: cache-repo
       uses: actions/cache@v3
@@ -112,16 +109,6 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-repo-${{ env.MANIFEST_BRANCH }}-
           ${{ runner.os }}-repo-
-
-    - name: Cache CCache
-      id: cache-ccache
-      uses: actions/cache@v3
-      with:
-        path: ${{ github.workspace }}/.ccache
-        key: ${{ runner.os }}-ccache-${{ env.MANIFEST_BRANCH }}-${{ github.run_id }}
-        restore-keys: |
-          ${{ runner.os }}-ccache-${{ env.MANIFEST_BRANCH }}-
-          ${{ runner.os }}-ccache-
 
     - name: Cleanup Workspace
       uses: rokibhasansagar/slimhub_actions@main
@@ -135,27 +122,9 @@ jobs:
       run: |
         sudo apt update
         sudo apt -y upgrade
-        sudo apt -y install gperf gcc-multilib gcc-10-multilib g++-multilib g++-10-multilib lib32ncurses5-dev x11proto-core-dev lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc bc ccache lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libwxgtk3.0-gtk3-dev lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev libtinfo5 libgflags-dev
+        sudo apt -y install gperf gcc-multilib gcc-10-multilib g++-multilib g++-10-multilib lib32ncurses5-dev x11proto-core-dev lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc bc lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libwxgtk3.0-gtk3-dev lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev libtinfo5 libgflags-dev
         sudo add-apt-repository universe -y
         sudo apt -y install libncurses5
-
-    - name: Configure CCache
-      run: |
-        # تأكد ان ccache مثبت قبل الاستخدام
-        if ! command -v ccache &> /dev/null; then
-          echo "❌ ccache not found, installing..."
-          sudo apt update && sudo apt install -y ccache
-        fi
-        
-        ccache -M $CCACHE_SIZE
-        ccache -s
-        ccache -z
-
-    - name: Show CCache Stats
-      run: |
-        echo "CCache directory: $CCACHE_DIR"
-        echo "CCache size limit: $CCACHE_SIZE"
-        ccache -s
 
     - name: Install OpenJDK 8
       uses: actions/setup-java@v4
@@ -240,9 +209,10 @@ jobs:
         cd workspace
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
-        export CCACHE_EXEC=${{ env.CCACHE_EXEC }}
-        export USE_CCACHE=1
-        export CCACHE_DIR=${{ env.CCACHE_DIR }}
+        
+        # IMPORTANT: Remove ccache for Android 12.1+ builds
+        # The build system forbids ccache in newer versions
+        export CCACHE_DISABLE=1
         
         lunch ${{ env.DEVICE_MAKEFILE }}-eng
         
@@ -256,10 +226,6 @@ jobs:
         
         make ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
         echo "✅ Successfully built ${{ github.event.inputs.BUILD_TARGET }}.img!"
-
-    - name: Show CCache Stats
-      run: |
-        ccache -s
 
     - name: Set Build Date & Device Tree URL
       run: |
@@ -330,10 +296,6 @@ jobs:
           
           ## Build Performance
           $([ "${{ steps.cache-repo.outputs.cache-hit }}" = "true" ] && echo "✅ Used cached repository" || echo "🔄 Fresh repository sync")
-          $([ "${{ steps.cache-ccache.outputs.cache-hit }}" = "true" ] && echo "✅ Used ccache" || echo "🔄 Fresh compilation")
-          
-          ## CCache Statistics
-          $(ccache -s | grep -E "(cache hit|cache miss|files in cache|cache size)" | head -5)
 
     - name: Check Missing Dependencies
       run: |
