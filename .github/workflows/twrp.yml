@@ -188,28 +188,29 @@ jobs:
           DEVICE_TREE_URL="${DEVICE_TREE_URL%.git}"
         fi
         echo "DEVICE_TREE_URL=${DEVICE_TREE_URL}" >> $GITHUB_ENV
-
+        
     - name: Check Generated Recovery Image
       run: |
         cd workspace
-        if [ -f out/target/product/${{ github.event.inputs.DEVICE_NAME }}/recovery.img ]; then
-            echo "✅ recovery.img found"
-            echo "RECOVERY_TYPE=recovery" >> $GITHUB_ENV
-        elif [ -f out/target/product/${{ github.event.inputs.DEVICE_NAME }}/boot.img ]; then
-            echo "✅ boot.img found"
-            echo "RECOVERY_TYPE=boot" >> $GITHUB_ENV
-        elif [ -f out/target/product/${{ github.event.inputs.DEVICE_NAME }}/vendor_boot.img ]; then
-            echo "✅ vendor_boot.img found"
-            echo "RECOVERY_TYPE=vendor_boot" >> $GITHUB_ENV
+
+        PRODUCT_PATH="out/target/product/${{ github.event.inputs.DEVICE_NAME }}"
+
+        if [ -f "$PRODUCT_PATH/recovery.img" ]; then
+            RECOVERY_TYPE="recovery"
+        elif [ -f "$PRODUCT_PATH/boot.img" ]; then
+            RECOVERY_TYPE="boot"
+        elif [ -f "$PRODUCT_PATH/vendor_boot.img" ]; then
+            RECOVERY_TYPE="vendor_boot"
         else
             echo "❌ No recovery file found!"
             exit 1
         fi
-        
-        IMG_PATH="out/target/product/${{ github.event.inputs.DEVICE_NAME }}/${{ env.RECOVERY_TYPE }}.img"
-        if [ -f "$IMG_PATH" ]; then
-          echo "MD5_IMG=$(md5sum $IMG_PATH | cut -d ' ' -f 1)" >> $GITHUB_ENV
-        fi
+
+        echo "✅ $RECOVERY_TYPE.img found"
+        echo "RECOVERY_TYPE=$RECOVERY_TYPE" >> $GITHUB_ENV
+
+        IMG_PATH="$PRODUCT_PATH/$RECOVERY_TYPE.img"
+        echo "MD5_IMG=$(md5sum $IMG_PATH | cut -d ' ' -f 1)" >> $GITHUB_ENV
 
     - name: Create Recovery ZIP
       run: |
