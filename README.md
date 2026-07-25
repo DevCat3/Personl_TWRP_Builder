@@ -151,6 +151,7 @@ This workflow is provided as-is for building open-source TWRP recovery. TWRP is 
 
 - [Team Win Recovery Project](https://twrp.me) - For the amazing recovery
 - [minimal-manifest-twrp](https://github.com/minimal-manifest-twrp) - Clean manifest for building TWRP
+- [kinguser981](https://github.com/kinguser981)
 - GitHub Actions Community - For the excellent automation tools
 
 ---
